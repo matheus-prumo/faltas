@@ -1,5 +1,5 @@
 /* Guarda o app no celular para abrir sem internet. Os dados ficam no próprio app (e no OneDrive pela sincronização). */
-const VERSAO = "faltas-v2";
+const VERSAO = "faltas-v4";
 const ARQUIVOS = ["./", "index.html", "app.css", "app.js", "sync.js", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(VERSAO).then(c => c.addAll(ARQUIVOS)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => {
