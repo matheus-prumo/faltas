@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Faltas</title>
+<meta name="theme-color" content="#0f5c4d">
+<meta name="color-scheme" content="light dark">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+  <div class="marca"><span class="logo">▦</span><div><h1>Faltas</h1><small id="loja">Império das Capas</small></div></div>
+  <button id="b-sync" class="chip" data-act="sync" aria-live="polite"><span class="ic">☁</span><span id="t-sync">…</span></button>
+  <button id="b-menu" class="icone" data-act="menu" aria-label="Menu">⋮</button>
+</header>
+<div id="aviso" class="aviso" hidden></div>
+<main id="view"></main>
+<div id="barra" class="barra" hidden></div>
+<nav class="tabs" id="tabs">
+  <button data-act="aba" data-aba="capas"><span>📱</span>Capas</button>
+  <button data-act="aba" data-aba="peliculas"><span>🛡</span>Películas</button>
+  <button data-act="aba" data-aba="outros"><span>📦</span>Outros</button>
+</nav>
+<div id="sheet-root"></div>
+<div id="toast" role="status"></div>
+<script src="sync.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

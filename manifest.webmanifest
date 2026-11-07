@@ -1,0 +1,17 @@
+{
+  "name": "Faltas — Império das Capas",
+  "short_name": "Faltas",
+  "description": "Anote o que está faltando na loja e sincronize com o PDV.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f5c4d",
+  "theme_color": "#0f5c4d",
+  "lang": "pt-BR",
+  "icons": [
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}
