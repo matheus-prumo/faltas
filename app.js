@@ -2,7 +2,7 @@
   "use strict";
   var SK = Sync.sk;
   var $ = function (s, e) { return (e || document).querySelector(s); };
-  var VERSAO = "1.0";
+  var VERSAO = "1.1";
   var CORES_PADRAO = ["Preta", "Rosa", "Roxa", "Azul", "Vermelha"];
 
   /* ---------------- estado (fica no celular; funciona sem internet) ---------------- */
@@ -306,7 +306,7 @@
     var secoes = aba === "outros" ? secoesOutros(I) : secoesGrade(I, aba);
     if (!secoes.length) { toast("Nada com quantidade para pedir."); return; }
     var forn = S.forn[aba] || "";
-    var f = folha('<h2>Pedido</h2><label>Fornecedor</label><select id="p-for">' + fornOpcoes(I, forn) + '</select><pre id="p-txt"></pre><div class="linha"><button class="btn wa" data-act="p-wa">📲 WhatsApp</button><button class="btn" data-act="p-copiar">📋 Copiar texto</button></div><div class="linha"><button class="btn perigo" data-act="p-final">✔ Finalizar pedido (zerar)</button></div><div class="info" id="p-info">Depois de enviar, toque em “Finalizar pedido” para zerar e começar o próximo. Os modelos continuam salvos.</div>');
+    var f = folha('<h2>Pedido</h2><label>Fornecedor</label><select id="p-for">' + fornOpcoes(I, forn) + '</select><pre id="p-txt"></pre><div class="linha"><button class="btn wa" data-act="p-wa">📲 WhatsApp</button><button class="btn" data-act="p-copiar">📋 Copiar texto</button></div><div class="linha"><button class="btn" data-act="p-img">🖼 Imagem</button><button class="btn" data-act="p-pdf">📄 PDF</button></div><div class="linha"><button class="btn perigo" data-act="p-final">✔ Finalizar pedido (zerar)</button></div><div class="info" id="p-info">Depois de enviar, toque em “Finalizar pedido” para zerar e começar o próximo. Os modelos continuam salvos.</div>');
     function atualizar() {
       var fn = f.querySelector("#p-for").value; S.forn[aba] = fn; salvar();
       f.querySelector("#p-txt").textContent = textoPedido(secoes, fn, I.loja);
@@ -315,7 +315,13 @@
   }
   function folhaMenu() {
     var d = Sync.auth.dados() || {};
-    folha('<h2>Conta e sincronização</h2><div class="lista-menu"><div class="it"><span>Conta Microsoft</span><span>' + esc(d.email || "não conectada") + '</span></div><div class="it"><span>Última sincronização</span><span>' + esc(S.ultima || "—") + '</span></div><div class="it"><span>Versão do app</span><span>' + VERSAO + '</span></div></div><div class="linha"><button class="btn pri" data-act="sync-agora">⟳ Sincronizar agora</button>' + (Sync.auth.conectado() ? '<button class="btn" data-act="sair">Sair da conta</button>' : '<button class="btn" data-act="entrar">Entrar na conta</button>') + '</div><div class="info">Tudo que você anota fica salvo neste celular, mesmo sem internet. Quando houver internet, o app envia e recebe as mudanças do PDV pelo OneDrive.</div>');
+    var fm = folha('<h2>Conta e sincronização</h2><div class="lista-menu"><div class="it"><span>Conta Microsoft</span><span>' + esc(d.email || "não conectada") + '</span></div><div class="it"><span>Última sincronização</span><span>' + esc(S.ultima || "—") + '</span></div><div class="it"><span>Versão do app</span><span>' + VERSAO + '</span></div></div><div class="linha"><button class="btn pri" data-act="sync-agora">⟳ Sincronizar agora</button>' + (Sync.auth.conectado() ? '<button class="btn" data-act="sair">Sair da conta</button>' : '<button class="btn" data-act="entrar">Entrar na conta</button>') + '</div><div class="info">Tudo que você anota fica salvo neste celular, mesmo sem internet. Quando houver internet, o app envia e recebe as mudanças do PDV pelo OneDrive.</div>');
+    travaSuportada().then(function (ok) {
+      if (!ok || !fm.isConnected) return;
+      var b = document.createElement("div"); b.className = "linha";
+      b.innerHTML = travaId() ? '<button class="btn" data-act="trava-off">🔓 Desativar trava por digital</button>' : '<button class="btn" data-act="trava-on">🔒 Ativar trava por digital</button>';
+      fm.insertBefore(b, fm.querySelector(".info"));
+    });
   }
 
   /* ---------------- sincronização ---------------- */
@@ -366,6 +372,153 @@
     Sync.auth.entrar(true);
   }
 
+  /* ---------------- compartilhar pedido (imagem / PDF) ---------------- */
+  function quebra(c, texto, larg) {
+    var palavras = String(texto).split(" "), linhas = [], atual = "";
+    palavras.forEach(function (p) {
+      var t = atual ? atual + " " + p : p;
+      if (c.measureText(t).width <= larg || !atual) atual = t; else { linhas.push(atual); atual = p; }
+    });
+    if (atual) linhas.push(atual);
+    return linhas;
+  }
+  function desenharPedido(secoes, forn, loja) {
+    var W = 1080, P = 56, FAM = 'system-ui,-apple-system,"Segoe UI",Roboto,sans-serif', hoje = new Date().toLocaleDateString("pt-BR");
+    var cv = document.createElement("canvas"); cv.width = W; cv.height = 10;
+    var total = secoes.reduce(function (s, x) { return s + x.total; }, 0);
+    function rodar(c, desenha) {
+      var y = 0;
+      if (desenha) { c.fillStyle = "#ffffff"; c.fillRect(0, 0, W, cv.height); c.fillStyle = "#0f5c4d"; c.fillRect(0, 0, W, 210); }
+      if (desenha) {
+        c.fillStyle = "#ffffff"; c.textBaseline = "alphabetic"; c.textAlign = "left";
+        c.font = "bold 54px " + FAM; c.fillText(loja || "Pedido", P, 88);
+        c.font = "32px " + FAM; c.fillStyle = "rgba(255,255,255,.85)";
+        c.fillText("Pedido de reposição · " + hoje, P, 140);
+        if (forn) c.fillText("Para: " + forn, P, 184);
+      }
+      y = 210 + 50;
+      secoes.forEach(function (s) {
+        if (desenha) {
+          c.fillStyle = "#0f5c4d"; c.font = "bold 40px " + FAM; c.textAlign = "left"; c.fillText(s.titulo, P, y);
+          c.fillStyle = "#5d6f6a"; c.font = "30px " + FAM; c.textAlign = "right"; c.fillText(s.total + (s.total === 1 ? " peça" : " peças"), W - P, y);
+          c.fillStyle = "#0f5c4d"; c.fillRect(P, y + 14, W - 2 * P, 3);
+        }
+        y += 56;
+        s.linhas.forEach(function (l) {
+          var nome = l.nome + ((l.detalhe && !l.cores.length) ? " — " + l.detalhe : "");
+          c.font = "bold 36px " + FAM;
+          var ls = quebra(c, nome, W - 2 * P - 190);
+          if (desenha) {
+            c.fillStyle = "#14201d"; c.textAlign = "left"; ls.forEach(function (t, i) { c.fillText(t, P, y + i * 46); });
+            c.textAlign = "right"; c.fillText(l.qtd + " un", W - P, y);
+          }
+          y += ls.length * 46;
+          l.cores.forEach(function (co) {
+            if (desenha) { c.font = "31px " + FAM; c.fillStyle = "#5d6f6a"; c.textAlign = "left"; c.fillText("•  " + co[1] + " " + co[0].toLowerCase(), P + 34, y); }
+            y += 40;
+          });
+          if (l.obs) { if (desenha) { c.font = "italic 29px " + FAM; c.fillStyle = "#5d6f6a"; c.textAlign = "left"; c.fillText("(" + l.obs + ")", P + 34, y); } y += 40; }
+          if (desenha) { c.fillStyle = "#e4eae7"; c.fillRect(P, y - 22, W - 2 * P, 2); }
+          y += 18;
+        });
+        y += 22;
+      });
+      if (desenha) {
+        c.fillStyle = "#d4a017"; c.beginPath();
+        if (c.roundRect) c.roundRect(P, y, W - 2 * P, 100, 22); else c.rect(P, y, W - 2 * P, 100);
+        c.fill();
+        c.fillStyle = "#2b2100"; c.font = "bold 46px " + FAM; c.textAlign = "center"; c.fillText("TOTAL: " + total + (total === 1 ? " peça" : " peças"), W / 2, y + 66);
+      }
+      y += 100 + 50;
+      if (desenha) { c.fillStyle = "#93a8a1"; c.font = "26px " + FAM; c.textAlign = "center"; c.fillText("Gerado pelo app Faltas", W / 2, y); }
+      return y + 40;
+    }
+    cv.height = rodar(cv.getContext("2d"), false);
+    rodar(cv.getContext("2d"), true);
+    return cv;
+  }
+  function blobDe(cv, tipo, qual) { return new Promise(function (ok) { cv.toBlob(ok, tipo, qual); }); }
+  async function pdfDeCanvas(cv) {
+    var jpg = new Uint8Array(await (await blobDe(cv, "image/jpeg", 0.92)).arrayBuffer());
+    var enc = new TextEncoder(), partes = [], pos = 0, offs = [];
+    function add(x) { var b = typeof x === "string" ? enc.encode(x) : x; partes.push(b); pos += b.length; }
+    var pw = 595, ph = Math.round(595 * cv.height / cv.width), cont = "q " + pw + " 0 0 " + ph + " 0 0 cm /Im0 Do Q";
+    add("%PDF-1.4\n");
+    offs[1] = pos; add("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+    offs[2] = pos; add("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+    offs[3] = pos; add("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + pw + " " + ph + "] /Resources << /XObject << /Im0 5 0 R >> >> /Contents 4 0 R >>\nendobj\n");
+    offs[4] = pos; add("4 0 obj\n<< /Length " + cont.length + " >>\nstream\n" + cont + "\nendstream\nendobj\n");
+    offs[5] = pos; add("5 0 obj\n<< /Type /XObject /Subtype /Image /Width " + cv.width + " /Height " + cv.height + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " + jpg.length + " >>\nstream\n");
+    add(jpg); add("\nendstream\nendobj\n");
+    var xr = pos; add("xref\n0 6\n0000000000 65535 f \n");
+    for (var i = 1; i <= 5; i++) add(("0000000000" + offs[i]).slice(-10) + " 00000 n \n");
+    add("trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n" + xr + "\n%%EOF\n");
+    return new Blob(partes, { type: "application/pdf" });
+  }
+  async function entregar(blob, nome, titulo) {
+    var f = new File([blob], nome, { type: blob.type });
+    if (navigator.canShare && navigator.canShare({ files: [f] })) {
+      try { await navigator.share({ files: [f], title: titulo }); return; }
+      catch (e) { if (e && e.name === "AbortError") return; }
+    }
+    var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = nome; document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+    toast("Arquivo salvo em Downloads");
+  }
+  async function compartilharPedido(formato) {
+    var I = indice(), aba = S.aba, fn = $("#p-for").value, sec = aba === "outros" ? secoesOutros(I) : secoesGrade(I, aba);
+    try {
+      var cv = desenharPedido(sec, fn, I.loja), nome = "pedido-" + new Date().toISOString().slice(0, 10);
+      if (formato === "pdf") await entregar(await pdfDeCanvas(cv), nome + ".pdf", "Pedido");
+      else await entregar(await blobDe(cv, "image/png"), nome + ".png", "Pedido");
+    } catch (e) { console.warn(e); toast("Não consegui gerar o arquivo."); }
+  }
+
+  /* ---------------- trava por digital (WebAuthn) ---------------- */
+  var CHAVE_TRAVA = "faltas_trava", ocultoEm = 0, tentando = false;
+  function b64(buf) { var s = ""; new Uint8Array(buf).forEach(function (b) { s += String.fromCharCode(b); }); return btoa(s); }
+  function deb64(t) { var s = atob(t), a = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a; }
+  function aleat(n) { var a = new Uint8Array(n); crypto.getRandomValues(a); return a; }
+  function travaId() { try { return localStorage.getItem(CHAVE_TRAVA) || ""; } catch (e) { return ""; } }
+  function travaSuportada() {
+    if (!(window.PublicKeyCredential && navigator.credentials && window.isSecureContext)) return Promise.resolve(false);
+    return PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(function (v) { return !!v; }, function () { return false; });
+  }
+  function verificarDigital() {
+    return navigator.credentials.get({ publicKey: { challenge: aleat(32), allowCredentials: [{ type: "public-key", id: deb64(travaId()) }], userVerification: "required", timeout: 60000 } });
+  }
+  function mostrarTrava(msg) {
+    var t = $("#trava"); if (!t) return;
+    t.hidden = false; document.body.classList.add("travado");
+    $("#trava-msg").textContent = msg || "";
+  }
+  function esconderTrava() { var t = $("#trava"); if (t) t.hidden = true; document.body.classList.remove("travado"); }
+  async function destravar() {
+    if (!travaId()) { esconderTrava(); return; }
+    if (tentando) return; tentando = true;
+    $("#trava-msg").textContent = "Use sua digital…";
+    try { await verificarDigital(); esconderTrava(); sincronizar(false); }
+    catch (e) { $("#trava-msg").textContent = "Não foi possível confirmar. Toque em “Desbloquear” para tentar de novo."; }
+    finally { tentando = false; }
+  }
+  async function ativarTrava() {
+    try {
+      var c = await navigator.credentials.create({ publicKey: {
+        rp: { name: "Faltas" }, user: { id: aleat(16), name: "faltas", displayName: "Faltas" }, challenge: aleat(32),
+        pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+        authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "discouraged" }, timeout: 60000 } });
+      localStorage.setItem(CHAVE_TRAVA, b64(c.rawId)); fechar(); toast("Trava por digital ativada ✓");
+    } catch (e) { toast("Não consegui ativar a trava."); }
+  }
+  async function desativarTrava() {
+    try { await verificarDigital(); localStorage.removeItem(CHAVE_TRAVA); fechar(); toast("Trava desativada"); }
+    catch (e) { toast("Não foi possível confirmar a digital."); }
+  }
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) { ocultoEm = Date.now(); return; }
+    if (travaId() && ocultoEm && Date.now() - ocultoEm > 60000) { mostrarTrava(""); destravar(); }
+  });
+
   /* ---------------- eventos ---------------- */
   document.addEventListener("click", function (ev) {
     var el = ev.target.closest("[data-act]"); if (!el) return;
@@ -406,6 +559,11 @@
         window.open("https://wa.me/" + tel + "?text=" + encodeURIComponent(textoPedido(sec, fn, I.loja)), "_blank");
         break;
       }
+      case "p-img": compartilharPedido("png"); break;
+      case "p-pdf": compartilharPedido("pdf"); break;
+      case "destravar": destravar(); break;
+      case "trava-on": ativarTrava(); break;
+      case "trava-off": desativarTrava(); break;
       case "p-copiar": {
         var txt = $("#p-txt").textContent;
         (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(function () { toast("Texto copiado"); }, function () { toast("Não consegui copiar. Segure no texto para copiar."); });
@@ -446,6 +604,7 @@
   /* ---------------- início ---------------- */
   async function iniciar() {
     render();
+    if (travaId()) destravar();
     chipSync(Sync.auth.conectado() ? "novo" : "novo", Sync.auth.conectado() ? "…" : "Entrar");
     var r = { estado: "nada" };
     try { r = await Sync.auth.tratarRetorno(); } catch (e) { r = { estado: "erro", msg: String(e.message || e) }; }

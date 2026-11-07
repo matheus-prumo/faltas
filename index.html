@@ -12,6 +12,10 @@
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
+<div id="trava" class="trava" hidden>
+  <div class="trava-box"><span class="logo">▦</span><h1>Faltas</h1><p id="trava-msg">Use sua digital para abrir.</p><button class="btn pri" data-act="destravar">🔓 Desbloquear</button></div>
+</div>
+<script>try{if(localStorage.getItem("faltas_trava")){document.getElementById("trava").hidden=false;document.body.classList.add("travado")}}catch(e){}</script>
 <header class="top">
   <div class="marca"><span class="logo">▦</span><div><h1>Faltas</h1><small id="loja">Império das Capas</small></div></div>
   <button id="b-sync" class="chip" data-act="sync" aria-live="polite"><span class="ic">☁</span><span id="t-sync">…</span></button>
