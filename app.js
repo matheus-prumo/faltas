@@ -5,7 +5,7 @@
   function ico(n, cls) { return '<svg class="i' + (cls ? " " + cls : "") + '" aria-hidden="true"><use href="#i-' + n + '"/></svg>'; }
   function vibra(ms) { try { if (navigator.vibrate) navigator.vibrate(ms || 8); } catch (e) { } }
   var folhaAberta = false, ignoraPop = false;
-  var VERSAO = "1.2";
+  var VERSAO = "1.3";
   var CORES_PADRAO = ["Preta", "Rosa", "Roxa", "Azul", "Vermelha"];
 
   /* ---------------- estado (fica no celular; funciona sem internet) ---------------- */
@@ -204,6 +204,7 @@
     $("#loja").textContent = I.loja || "Império das Capas";
     document.querySelectorAll("#tabs button").forEach(function (b) { b.classList.toggle("sel", b.dataset.aba === aba); });
     var v = $("#view");
+    if (aba === "resumo") { v.innerHTML = viewResumo(I); $("#barra").hidden = true; document.body.classList.remove("com-barra"); avisoRender(); return; }
     if (aba === "outros") v.innerHTML = viewOutros(I); else v.innerHTML = viewGrade(I, aba);
     var n = aba === "outros" ? I.faltas.reduce(function (s, f) { return s + f.v.q; }, 0) : totalFam(I, aba);
     var barra = $("#barra");
@@ -274,7 +275,7 @@
     var a = f.querySelector("[autofocus]"); if (a) setTimeout(function () { a.focus(); }, 60);
     return f;
   }
-  function fechar() { $("#sheet-root").innerHTML = ""; if (folhaAberta) { folhaAberta = false; ignoraPop = true; try { history.back(); } catch (e) { ignoraPop = false; } } }
+  function fechar() { pararVoz(); $("#sheet-root").innerHTML = ""; if (folhaAberta) { folhaAberta = false; ignoraPop = true; try { history.back(); } catch (e) { ignoraPop = false; } } }
 
   function folhaNovoModelo() {
     var I = indice(), sel = S.tipoSel[S.aba], todos = {};
@@ -780,6 +781,238 @@
     if (folhaAberta) { folhaAberta = false; $("#sheet-root").innerHTML = ""; }
   });
 
+  /* ================= v1.3: Resumo, ditado por voz, atalhos ================= */
+  /* ---- estatísticas do histórico (só neste celular) ---- */
+  function mediaDe(a) { return a.reduce(function (s, x) { return s + x; }, 0) / (a.length || 1); }
+  function estatHist(I) {
+    var h = (S.hist || []).slice().reverse(), det = {}, top = {}, corte = Date.now() - 90 * 86400000;
+    h.forEach(function (p) {
+      var t = new Date(p.em).getTime(), local = {};
+      p.itens.forEach(function (it) {
+        var k, base, nome, q2, ref;
+        if (p.aba === "outros") { base = it.i || it.m; k = "o|" + base + "|" + (it.i ? it.m : ""); nome = base + (it.i && it.m ? " · " + it.m : ""); q2 = it.q; ref = { aba: "outros", c: it.c, i: it.i, m: it.m, f: it.f }; }
+        else { base = it[1]; k = "g|" + it[0] + "|" + it[1] + "|" + it[2]; nome = it[1] + (it[2] ? " " + String(it[2]).toLowerCase() : "") + " · " + it[0]; q2 = it[3]; ref = { aba: p.aba, tipo: it[0], modelo: it[1], cor: it[2] }; }
+        if (!local[k]) local[k] = { nome: nome, q: 0, ref: ref, base: base, aba: p.aba };
+        local[k].q += q2;
+      });
+      Object.keys(local).forEach(function (k) {
+        var l = local[k], d = det[k] || (det[k] = { nome: l.nome, ts: [], qs: [], ref: l.ref });
+        d.ts.push(t); d.qs.push(l.q);
+        if (t >= corte) { var mk = (l.aba === "outros" ? "o|" : "m|") + l.base, m = top[mk] || (top[mk] = { nome: l.base, qtd: 0, ped: 0 }); m.qtd += l.q; m.ped += 1; }
+      });
+    });
+    var sug = [];
+    Object.keys(det).forEach(function (k) {
+      var d = det[k]; if (d.ts.length < 2) return;
+      var gaps = []; for (var i = 1; i < d.ts.length; i++) gaps.push((d.ts[i] - d.ts[i - 1]) / 86400000);
+      var media = mediaDe(gaps), desde = (Date.now() - d.ts[d.ts.length - 1]) / 86400000, qMed = Math.max(1, Math.round(mediaDe(d.qs)));
+      if (media < 0.5 || desde < Math.max(2, media * 0.75)) return;
+      var r = d.ref, ja;
+      if (r.aba === "outros") ja = I.faltas.some(function (f) { return chave(f.v.i || f.v.m) === chave(r.i || r.m); });
+      else ja = !I.tipos[r.tipo] || q(I, r.tipo, r.modelo, r.cor || "") > 0;
+      if (ja) return;
+      sug.push({ nome: d.nome, ref: r, qMed: qMed, media: Math.round(media), desde: Math.round(desde), razao: desde / media });
+    });
+    sug.sort(function (a, b) { return b.razao - a.razao; });
+    var lista = Object.keys(top).map(function (k) { return top[k]; }).sort(function (a, b) { return b.qtd - a.qtd; }).slice(0, 5);
+    return { top: lista, sug: sug.slice(0, 4) };
+  }
+  var sugAtual = [];
+  function viewResumo(I) {
+    var nC = totalFam(I, "capas"), nP = totalFam(I, "peliculas"), nO = I.faltas.reduce(function (s, f) { return s + f.v.q; }, 0), tot = nC + nP + nO;
+    var pend = pendentes(), E = estatHist(I); sugAtual = E.sug;
+    var h = '<div class="hero"><small>Faltando agora</small><b class="big">' + tot + '</b><span class="sub">' + (tot ? (tot === 1 ? "peça" : "peças") + " para repor" : "Nada para repor. Tudo certo! ✓") + '</span><span class="sync">' + ico(pend ? "nuvem" : "ok") + (S.ultima ? " Sincronizado " + esc(S.ultima) : " Ainda não sincronizado") + (pend ? " · " + pend + " a enviar" : "") + "</span></div>";
+    h += '<div class="tres">' +
+      '<button class="mini-card' + (nC ? " tem" : "") + '" data-act="aba" data-aba="capas">' + ico("capas") + "<b>" + nC + "</b><small>Capas</small></button>" +
+      '<button class="mini-card' + (nP ? " tem" : "") + '" data-act="aba" data-aba="peliculas">' + ico("pel") + "<b>" + nP + "</b><small>Películas</small></button>" +
+      '<button class="mini-card' + (nO ? " tem" : "") + '" data-act="aba" data-aba="outros">' + ico("outros") + "<b>" + nO + "</b><small>Outros</small></button></div>";
+    h += '<button class="btn pri full grande" data-act="voz">' + ico("mic") + " Falar pedido</button>";
+    h += '<div class="sec">Pedidos prontos</div>';
+    var prontos = [["capas", nC], ["peliculas", nP], ["outros", nO]].filter(function (x) { return x[1] > 0; });
+    if (!prontos.length) h += '<div class="info">Quando você anotar quantidades, o pedido de cada lista aparece aqui.</div>';
+    prontos.forEach(function (x) { h += '<div class="lin"><span class="tx"><b>' + nomeAba(x[0]) + "</b><small>" + pecas(x[1]) + '</small></span><button class="btn" data-act="resumo-pedido" data-aba="' + x[0] + '">' + ico("pedido") + " Ver pedido</button></div>"; });
+    h += '<div class="sec">Sugestões para você</div>';
+    if (!E.sug.length) h += vazio("raio", "Ainda aprendendo", "Conforme você finaliza pedidos, o app descobre o que você costuma repor e avisa quando estiver na hora.");
+    E.sug.forEach(function (s, i) { h += '<div class="lin"><span class="tx"><b>' + esc(s.nome) + "</b><small>Você costuma pedir a cada ~" + s.media + " dias · último há " + s.desde + ' dias</small></span><button class="btn pri" data-act="sug-add" data-i="' + i + '">+ ' + s.qMed + "</button></div>"; });
+    h += '<div class="sec">O que mais sai (90 dias)</div>';
+    if (!E.top.length) h += '<div class="info">Aparece aqui depois do primeiro pedido finalizado.</div>';
+    else { var max = E.top[0].qtd; E.top.forEach(function (t) { h += '<div class="rank"><div class="rl"><b>' + esc(t.nome) + "</b><small>" + t.qtd + " un · " + t.ped + (t.ped === 1 ? " pedido" : " pedidos") + '</small></div><div class="barra-h"><i style="width:' + Math.max(6, Math.round(100 * t.qtd / max)) + '%"></i></div></div>'; }); }
+    return h;
+  }
+  function sugAdicionar(i) {
+    var s = sugAtual[i]; if (!s) return; var r = s.ref;
+    comDesfazer("Sugestão adicionada", function () {
+      if (r.aba === "outros") addFalta(r.c || "Outros", r.i, r.m, s.qMed, r.f || "");
+      else { var I = indice(); if (!(I.mods[r.tipo] || []).some(function (m) { return m.nome === r.modelo; })) definir(SK("mod", r.tipo, r.modelo), 1); definir(SK("qtd", r.tipo, r.modelo, r.cor || ""), s.qMed); }
+      mudou();
+    });
+  }
+
+  /* ---- ditado por voz: entende "três A15 preta, dois IP 13 transparente" ---- */
+  var NUMP = { zero: 0, um: 1, uma: 1, dois: 2, duas: 2, tres: 3, quatro: 4, cinco: 5, seis: 6, sete: 7, oito: 8, nove: 9, dez: 10, onze: 11, doze: 12, treze: 13, catorze: 14, quatorze: 14, quinze: 15, dezesseis: 16, dezessete: 17, dezoito: 18, dezenove: 19, vinte: 20, trinta: 30, quarenta: 40, cinquenta: 50, sessenta: 60, setenta: 70, oitenta: 80, noventa: 90, cem: 100 };
+  var PARADAS = { e: 1, de: 1, da: 1, do: 1, para: 1, pra: 1, pedido: 1, pedidos: 1, quero: 1, preciso: 1, mais: 1, capa: 1, capas: 1, pelicula: 1, peliculas: 1, unidades: 1, unidade: 1, un: 1, pecas: 1, peca: 1, a: 1, o: 1, os: 1, as: 1, com: 1, tambem: 1, depois: 1, ainda: 1, falta: 1, faltando: 1, faltam: 1, tipo: 1 };
+  function normaliza(t) { return String(t || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim(); }
+  function compacto(t) { return normaliza(t).replace(/ /g, ""); }
+  function tokensVoz(txt) {
+    var t = normaliza(txt).split(" ").filter(Boolean), out = [];
+    for (var i = 0; i < t.length; i++) {
+      var w = t[i];
+      if (w === "iphone") w = "ip";
+      if (w === "meia" && t[i + 1] === "duzia") { out.push("6"); i++; continue; }
+      if (w === "duzia" || w === "duzias") { if (out.length && /^1$/.test(out[out.length - 1])) out.pop(); out.push("12"); continue; }
+      if (w in NUMP) {
+        var n = NUMP[w];
+        if (n >= 20 && n < 100 && t[i + 1] === "e" && t[i + 2] in NUMP && NUMP[t[i + 2]] >= 1 && NUMP[t[i + 2]] <= 9) { n += NUMP[t[i + 2]]; i += 2; }
+        out.push(String(n)); continue;
+      }
+      out.push(w);
+    }
+    return out;
+  }
+  function varGenero(c) { var v = [c]; if (/a$/.test(c)) v.push(c.slice(0, -1) + "o"); else if (/o$/.test(c)) v.push(c.slice(0, -1) + "a"); return v; }
+  function vozAnalisar(texto) {
+    var I = indice(), T = tokensVoz(texto), fam = S.aba === "peliculas" ? "peliculas" : "capas", famDita = null;
+    T.forEach(function (w) { if (/^pelicula/.test(w)) famDita = "peliculas"; else if (/^capa/.test(w) && !famDita) famDita = "capas"; });
+    if (famDita) fam = famDita;
+    /* modelos: variantes compactas -> nome do modelo */
+    var mapaM = {}, nomesM = {};
+    Object.keys(I.tipos).forEach(function (tn) { modelosDe(I, tn).forEach(function (m) { nomesM[m] = 1; }); });
+    function addVar(v, m) { if (!v || v.length < 2) return; var l = mapaM[v] || (mapaM[v] = []); if (l.indexOf(m) < 0) l.push(m); }
+    Object.keys(nomesM).forEach(function (m) { addVar(compacto(m), m); });
+    Object.keys(nomesM).forEach(function (m) { var p = normaliza(m).split(" "); if (p.length >= 2 && /^[a-z]{3,}$/.test(p[0])) addVar(p.slice(1).join(""), m); });
+    /* cores e tipos */
+    var mapaC = {}; Object.keys(I.cores).forEach(function (tn) { I.cores[tn].forEach(function (c) { varGenero(compacto(c.nome)).forEach(function (v) { if (!mapaC[v]) mapaC[v] = c.nome; }); }); });
+    var mapaT = {}, palavras = {};
+    Object.keys(I.tipos).forEach(function (tn) { normaliza(tn).split(" ").forEach(function (w) { palavras[w] = (palavras[w] || 0) + 1; }); });
+    Object.keys(I.tipos).forEach(function (tn) { var c = compacto(tn); mapaT[c] = tn; });
+    Object.keys(I.tipos).forEach(function (tn) { normaliza(tn).split(" ").forEach(function (w) { if (w.length >= 4 && palavras[w] === 1 && !mapaT[w]) mapaT[w] = tn; }); });
+    /* varre os tokens */
+    var itens = [], sobra = [], pend = { q: null, cor: "", tipo: "" }, cur = null;
+    var primeiro = -1;
+    function acharAncora(i) { for (var len = 5; len >= 1; len--) { if (i + len > T.length) continue; var s = T.slice(i, i + len).join(""); if (mapaM[s]) return { len: len, modelos: mapaM[s] }; } return null; }
+    for (var j = 0; j < T.length; j++) { if (acharAncora(j)) { primeiro = j; break; } }
+    var qtdPrimeiro = primeiro > 0 && T.slice(0, primeiro).some(function (w) { return /^\d{1,4}$/.test(w); });
+    var i2 = 0;
+    while (i2 < T.length) {
+      var w = T[i2], an2 = acharAncora(i2);
+      if (an2) {
+        cur = { modelos: an2.modelos, q: pend.q, cor: pend.cor, tipo: pend.tipo };
+        pend = { q: null, cor: "", tipo: "" }; itens.push(cur); i2 += an2.len; continue;
+      }
+      var cm = null, ct = null, k;
+      for (k = 3; k >= 1 && !ct; k--) { if (i2 + k <= T.length && mapaT[T.slice(i2, i2 + k).join("")]) { ct = { len: k, tipo: mapaT[T.slice(i2, i2 + k).join("")] }; } }
+      for (k = 2; k >= 1 && !cm; k--) { if (i2 + k <= T.length && mapaC[T.slice(i2, i2 + k).join("")]) { cm = { len: k, cor: mapaC[T.slice(i2, i2 + k).join("")] }; } }
+      if (ct && (!cm || ct.len >= cm.len)) {
+        if (cur && (!qtdPrimeiro || (pend.q === null && !pend.cor && !pend.tipo))) cur.tipo = ct.tipo; else pend.tipo = ct.tipo;
+        i2 += ct.len; continue;
+      }
+      if (cm) {
+        if (cur && (!qtdPrimeiro || (pend.q === null && !pend.cor && !pend.tipo))) cur.cor = cm.cor; else pend.cor = cm.cor;
+        i2 += cm.len; continue;
+      }
+      if (/^\d{1,4}$/.test(w)) {
+        var n2 = parseInt(w, 10);
+        if (qtdPrimeiro) pend.q = n2;
+        else if (cur && cur.q === null) cur.q = n2;
+        else if (!cur) pend.q = n2;
+        else sobra.push(w);
+        i2++; continue;
+      }
+      if (!PARADAS[w]) sobra.push(w);
+      i2++;
+    }
+    /* resolve tipo e cor de cada item */
+    var res = [];
+    itens.forEach(function (it) {
+      function tiposCom(nome) { return Object.keys(I.tipos).filter(function (tn) { return modelosDe(I, tn).indexOf(nome) >= 0; }); }
+      var modelo = it.modelos[0], tipo = null, i3;
+      if (it.tipo) { for (i3 = 0; i3 < it.modelos.length; i3++) { if (tiposCom(it.modelos[i3]).indexOf(it.tipo) >= 0) { modelo = it.modelos[i3]; break; } } tipo = it.tipo; }
+      else {
+        var daFam = [];
+        for (i3 = 0; i3 < it.modelos.length && !daFam.length; i3++) { daFam = tiposCom(it.modelos[i3]).filter(function (tn) { return I.tipos[tn].f === fam; }); if (daFam.length) modelo = it.modelos[i3]; }
+        var sel = S.tipoSel[fam];
+        tipo = (daFam.indexOf(sel) >= 0 ? sel : daFam[0]) || tiposCom(modelo)[0] || null;
+      }
+      if (!tipo) { sobra.push(modelo); return; }
+      var cor = "";
+      if (it.cor && I.tipos[tipo] && I.tipos[tipo].u && (I.cores[tipo] || []).some(function (c) { return c.nome === it.cor; })) cor = it.cor;
+      res.push({ modelo: modelo, tipo: tipo, cor: cor, q: Math.max(1, Math.min(9999, it.q === null ? 1 : it.q)) });
+    });
+    return { itens: res, sobra: sobra };
+  }
+  var vozItens = [], vozSobra = [], rec = null;
+  function folhaVoz() {
+    var tem = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+    folha("<h2>Falar pedido</h2>" +
+      '<div class="info">Diga, por exemplo: <b>“três A15 preta, dois IP 13 transparente”</b>. Eu mostro o que entendi antes de anotar.</div>' +
+      (tem ? '<button class="mic" id="mic" data-act="mic" type="button">' + ico("mic") + '<span>Toque e fale</span></button>' : '<div class="info">Este navegador não tem ditado. Use o microfone do teclado do celular.</div>') +
+      '<label>O que eu ouvi (você pode corrigir)</label><textarea id="voz-txt" rows="3" placeholder="Fale, ou digite aqui. Também dá para usar o microfone do teclado."></textarea>' +
+      '<div class="linha"><button class="btn pri" data-act="voz-entender">' + ico("ok") + ' Entender</button></div><div id="voz-res"></div>' +
+      '<div class="info">Por enquanto o ditado entende capas e películas. Fale a quantidade, o modelo e, se quiser, a cor e o tipo.</div>');
+  }
+  function micEstado(on) { var m = $("#mic"); if (!m) return; m.classList.toggle("ouvindo", !!on); m.querySelector("span").textContent = on ? "Ouvindo… toque para parar" : "Toque e fale"; }
+  function pararVoz() { if (rec) { try { rec.abort(); } catch (e) { } rec = null; } }
+  function iniciarVoz() {
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition, ta = $("#voz-txt");
+    if (!SR) { toast("Este navegador não tem ditado. Use o microfone do teclado."); if (ta) ta.focus(); return; }
+    if (rec) { try { rec.stop(); } catch (e) { } return; }
+    var r = new SR(), base = ta.value.trim() ? ta.value.trim() + " " : "";
+    r.lang = "pt-BR"; r.interimResults = true; r.continuous = false; r.maxAlternatives = 1;
+    r.onresult = function (e) { var t = ""; for (var i = 0; i < e.results.length; i++) t += e.results[i][0].transcript + " "; if ($("#voz-txt")) $("#voz-txt").value = base + t.trim(); };
+    r.onend = function () { rec = null; micEstado(false); if ($("#voz-txt") && $("#voz-txt").value.trim()) vozEntender(); };
+    r.onerror = function (e) { rec = null; micEstado(false); toast(e.error === "not-allowed" || e.error === "service-not-allowed" ? "Permita o microfone para ditar." : e.error === "no-speech" ? "Não ouvi nada. Tente de novo." : "Não consegui ouvir (" + e.error + ")."); };
+    rec = r; try { r.start(); micEstado(true); vibra(10); } catch (e) { rec = null; }
+  }
+  function vozEntender() {
+    var ta = $("#voz-txt"); if (!ta) return;
+    var r = vozAnalisar(ta.value); vozItens = r.itens; vozSobra = r.sobra; vozDesenhar();
+  }
+  function vozDesenhar() {
+    var box = $("#voz-res"); if (!box) return; var I = indice(), h = "";
+    if (!vozItens.length) h = '<div class="vazio"><span>' + (vozSobra.length ? "Não encontrei nenhum modelo da sua lista nessa frase." : "Fale ou digite o pedido e toque em Entender.") + "</span></div>";
+    vozItens.forEach(function (it, n) {
+      var cand = Object.keys(I.tipos).filter(function (tn) { return tn === it.tipo || modelosDe(I, tn).indexOf(it.modelo) >= 0; });
+      var t = I.tipos[it.tipo], cores = t && t.u ? (I.cores[it.tipo] || []).map(function (c) { return c.nome; }) : [];
+      h += '<div class="vrow"><div class="vh"><b>' + esc(it.modelo) + '</b><button class="x" data-act="voz-del" data-n="' + n + '" aria-label="Tirar">' + ico("x") + '</button></div><div class="vsel"><select data-act-in="voz-tipo" data-n="' + n + '">' +
+        cand.map(function (tn) { return '<option value="' + esc(tn) + '"' + (tn === it.tipo ? " selected" : "") + ">" + esc(nomeAba(I.tipos[tn].f).replace(/s$/, "")) + " " + esc(tn) + "</option>"; }).join("") + "</select>" +
+        (cores.length ? '<select data-act-in="voz-cor" data-n="' + n + '"><option value="">(sem cor)</option>' + cores.map(function (c) { return '<option value="' + esc(c) + '"' + (c === it.cor ? " selected" : "") + ">" + esc(c) + "</option>"; }).join("") + "</select>" : "") +
+        '</div><div class="st"><button data-act="voz-menos" data-n="' + n + '">−</button><input type="number" inputmode="numeric" min="1" value="' + it.q + '" data-act-in="voz-q" data-n="' + n + '"><button data-act="voz-mais" data-n="' + n + '">+</button></div></div>';
+    });
+    if (vozSobra.length) h += '<div class="info">Não entendi: <b>' + esc(vozSobra.join(" ")) + "</b></div>";
+    if (vozItens.length) h += '<div class="linha"><button class="btn pri" data-act="voz-aplicar">' + ico("ok") + " Anotar " + vozItens.reduce(function (s, x) { return s + x.q; }, 0) + ' peças</button></div><div class="info">As quantidades são somadas ao que já está anotado.</div>';
+    box.innerHTML = h;
+  }
+  function vozAplicar() {
+    if (!vozItens.length) return;
+    var soma = {}, ordem = [];
+    vozItens.forEach(function (it) { var k = it.tipo + "\u0001" + it.modelo + "\u0001" + it.cor; if (!soma[k]) { soma[k] = { tipo: it.tipo, modelo: it.modelo, cor: it.cor, q: 0 }; ordem.push(k); } soma[k].q += it.q; });
+    var I = indice(), fam = I.tipos[soma[ordem[0]].tipo] ? I.tipos[soma[ordem[0]].tipo].f : "capas", prim = soma[ordem[0]].tipo, total = 0;
+    pararVoz();
+    comDesfazer("Anotado por voz", function () {
+      ordem.forEach(function (k) {
+        var s = soma[k], atual = q(I, s.tipo, s.modelo, s.cor); total += s.q;
+        if (!(I.mods[s.tipo] || []).some(function (m) { return m.nome === s.modelo; })) definir(SK("mod", s.tipo, s.modelo), 1);
+        definir(SK("qtd", s.tipo, s.modelo, s.cor || ""), Math.min(9999, atual + s.q));
+      });
+      S.aba = fam; S.tipoSel[fam] = prim; filtro = ""; mudou();
+    });
+    vozItens = []; fechar();
+  }
+
+  /* ---- atalhos do ícone (?a=falta | pedido | voz) ---- */
+  var ATALHO = (function () { try { return new URLSearchParams(location.search).get("a") || ""; } catch (e) { return ""; } })();
+  function executarAtalho(a) {
+    if (!a) return;
+    try { if (history.replaceState) history.replaceState(history.state, "", location.pathname); } catch (e) { }
+    if (a === "falta") { S.aba = "outros"; render(); folhaNovaFalta(); }
+    else if (a === "voz") { folhaVoz(); }
+    else if (a === "pedido") {
+      var I = indice(), f = ["capas", "peliculas", "outros"].filter(function (x) { return (x === "outros" ? I.faltas.length : totalFam(I, x)) > 0; })[0];
+      if (!f) { toast("Nada para pedir agora."); return; }
+      S.aba = f; render(); folhaPedido();
+    }
+  }
+
   /* ---------------- eventos ---------------- */
   document.addEventListener("click", function (ev) {
     var el = ev.target.closest("[data-act]"); if (!el) return;
@@ -843,6 +1076,14 @@
         fechar(); break;
       }
       case "menu": folhaMenu(); break;
+      case "voz": folhaVoz(); break;
+      case "mic": iniciarVoz(); break;
+      case "voz-entender": vozEntender(); break;
+      case "voz-mais": case "voz-menos": { var vi = vozItens[parseInt(d.n, 10)]; if (vi) { vi.q = Math.max(1, Math.min(9999, vi.q + (a === "voz-mais" ? 1 : -1))); vozDesenhar(); } break; }
+      case "voz-del": vozItens.splice(parseInt(d.n, 10), 1); vozDesenhar(); break;
+      case "voz-aplicar": vozAplicar(); break;
+      case "resumo-pedido": S.aba = d.aba; render(); folhaPedido(); break;
+      case "sug-add": sugAdicionar(parseInt(d.i, 10)); break;
       case "hist": folhaHist(); break;
       case "hist-ver": folhaHistVer(parseInt(d.i, 10)); break;
       case "hist-repetir": repetirPedido(parseInt(d.i, 10)); break;
@@ -879,6 +1120,9 @@
     var el = ev.target; if (!el.dataset || !el.dataset.actIn) return;
     if (el.dataset.actIn === "qtd") setQtd(el.dataset.t, el.dataset.m, el.dataset.c, el.value);
     else if (el.dataset.actIn === "f-qtd") setFalta(el.dataset.u, { q: parseInt(el.value, 10) || 0 });
+    else if (el.dataset.actIn === "voz-q") { var vq = vozItens[parseInt(el.dataset.n, 10)]; if (vq) { vq.q = Math.max(1, Math.min(9999, parseInt(el.value, 10) || 1)); vozDesenhar(); } }
+    else if (el.dataset.actIn === "voz-tipo") { var vt = vozItens[parseInt(el.dataset.n, 10)]; if (vt) { vt.tipo = el.value; var Iv = indice(); if (!(Iv.cores[vt.tipo] || []).some(function (c) { return c.nome === vt.cor; })) vt.cor = ""; vozDesenhar(); } }
+    else if (el.dataset.actIn === "voz-cor") { var vc = vozItens[parseInt(el.dataset.n, 10)]; if (vc) { vc.cor = el.value; } }
   });
   document.addEventListener("focusin", function (ev) { if (ev.target.type === "number" && ev.target.dataset.actIn) ev.target.select(); });
   document.addEventListener("input", function (ev) {
@@ -894,6 +1138,7 @@
 
   /* ---------------- início ---------------- */
   async function iniciar() {
+    S.aba = "resumo";
     render();
     if (travaId()) destravar();
     chipSync(Sync.auth.conectado() ? "novo" : "novo", Sync.auth.conectado() ? "…" : "Entrar");
@@ -906,7 +1151,8 @@
     if ("serviceWorker" in navigator) { try { navigator.serviceWorker.register("sw.js"); } catch (e) { } }
     if (Sync.auth.conectado() && r.estado !== "precisa_entrar") sincronizar(false);
     if (r.estado !== "erro" && !folhaAberta) tourSeNecessario();
+    executarAtalho(ATALHO);
   }
   iniciar();
-  window.__faltas = { pendentes: pendentes, S: function () { return S; }, indice: indice, sincronizar: sincronizar, textoPedido: textoPedido, secoesGrade: secoesGrade, secoesOutros: secoesOutros };
+  window.__faltas = { vozAnalisar: vozAnalisar, estatHist: estatHist, pendentes: pendentes, S: function () { return S; }, indice: indice, sincronizar: sincronizar, textoPedido: textoPedido, secoesGrade: secoesGrade, secoesOutros: secoesOutros };
 })();
