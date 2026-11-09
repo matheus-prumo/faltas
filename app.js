@@ -5,7 +5,7 @@
   function ico(n, cls) { return '<svg class="i' + (cls ? " " + cls : "") + '" aria-hidden="true"><use href="#i-' + n + '"/></svg>'; }
   function vibra(ms) { try { if (navigator.vibrate) navigator.vibrate(ms || 8); } catch (e) { } }
   var folhaAberta = false, ignoraPop = false;
-  var VERSAO = "1.4";
+  var VERSAO = "1.5";
   var CORES_PADRAO = ["Preta", "Rosa", "Roxa", "Azul", "Vermelha"];
 
   /* ---------------- estado (fica no celular; funciona sem internet) ---------------- */
@@ -14,7 +14,7 @@
     var v = null;
     try { v = JSON.parse(localStorage.getItem("faltas_estado_v1") || "null"); } catch (e) { }
     v = v || {};
-    return { items: v.items || {}, base: v.base || {}, ord: v.ord || {}, ultima: v.ultima || "", aba: v.aba || "capas", tipoSel: v.tipoSel || {}, forn: v.forn || {}, hist: v.hist || [], procuras: v.procuras || [] };
+    return { items: v.items || {}, base: v.base || {}, ord: v.ord || {}, ultima: v.ultima || "", aba: v.aba || "capas", tipoSel: v.tipoSel || {}, forn: v.forn || {}, hist: v.hist || [], procuras: v.procuras || [], excl: v.excl || {} };
   }
   function salvar() { try { localStorage.setItem("faltas_estado_v1", JSON.stringify(S)); } catch (e) { } }
   var seqLocal = 0;
@@ -302,16 +302,43 @@
   }
   function fornOpcoes(I, sel) { return '<option value="">(sem fornecedor)</option>' + I.forns.map(function (x) { return '<option value="' + esc(x.nome) + '"' + (x.nome === sel ? " selected" : "") + ">" + esc(x.nome) + "</option>"; }).join(""); }
   var pedidoEstado = { forn: "" };
+  function kLinha(s, l) { return s.titulo + "\u0001" + l.nome + "\u0001" + (l.detalhe || ""); }
+  function tot(ls) { return ls.reduce(function (a, l) { return a + l.qtd; }, 0); }
+  function partir(secoes, aba) {
+    var ex = (S.excl || {})[aba] || {}, inc = [], fora = [];
+    secoes.forEach(function (s) {
+      var a = s.linhas.filter(function (l) { return !ex[kLinha(s, l)]; }), b = s.linhas.filter(function (l) { return ex[kLinha(s, l)]; });
+      if (a.length) inc.push({ titulo: s.titulo, linhas: a, total: tot(a) });
+      if (b.length) fora.push({ titulo: s.titulo, linhas: b, total: tot(b) });
+    });
+    return { inc: inc, fora: fora };
+  }
+  function secoesAba(I, aba) { return aba === "outros" ? secoesOutros(I) : secoesGrade(I, aba); }
+  function chaveItemPedido(aba, k) {
+    var p = JSON.parse(k);
+    if (aba === "outros") { if (p[0] !== "falta") return null; var v = S.items[k]; return String(v.c).toUpperCase() + "\u0001" + (v.i || v.m) + "\u0001" + (v.i ? v.m : ""); }
+    if (p[0] !== "qtd") return null;
+    return (aba === "capas" ? "CAPA " : "PELÍCULA ") + String(p[1]).toUpperCase() + "\u0001" + p[2] + "\u0001";
+  }
+  var folhaAtualizaPedido = function () { };
   function folhaPedido() {
     var I = indice(), aba = S.aba;
-    var secoes = aba === "outros" ? secoesOutros(I) : secoesGrade(I, aba);
+    var secoes = secoesAba(I, aba);
     if (!secoes.length) { toast("Nada com quantidade para pedir."); return; }
+    S.excl = S.excl || {}; var validas = {}; secoes.forEach(function (s) { s.linhas.forEach(function (l) { validas[kLinha(s, l)] = 1; }); });
+    var ex0 = S.excl[aba] || {}; Object.keys(ex0).forEach(function (k) { if (!validas[k]) delete ex0[k]; }); S.excl[aba] = ex0;
+    var flat = []; secoes.forEach(function (s) { s.linhas.forEach(function (l) { flat.push({ k: kLinha(s, l), s: s, l: l }); }); });
+    var escolha = '<details class="aj" id="p-esc"><summary id="p-esc-t"></summary><div class="rec">' + flat.map(function (x, n) { return '<label class="chk esc"><input type="checkbox" data-act-in="p-inc" data-n="' + n + '"' + (ex0[x.k] ? "" : " checked") + '><span><b>' + esc(x.l.nome) + '</b><small>' + x.l.qtd + ' un · ' + esc(x.s.titulo) + (x.l.detalhe ? " · " + esc(x.l.detalhe) : "") + "</small></span></label>"; }).join("") + "</div></details>";
     var forn = S.forn[aba] || "";
-    var f = folha('<h2>Pedido</h2><label>Fornecedor</label><select id="p-for">' + fornOpcoes(I, forn) + '</select><pre id="p-txt"></pre><div class="linha"><button class="btn wa" data-act="p-wa">' + ico("chat") + ' WhatsApp</button><button class="btn" data-act="p-copiar">' + ico("copiar") + ' Copiar texto</button></div><div class="linha"><button class="btn" data-act="p-img">' + ico("img") + ' Imagem</button><button class="btn" data-act="p-pdf">' + ico("pdf") + ' PDF</button></div><div class="linha"><button class="btn perigo" data-act="p-final">' + ico("ok") + ' Finalizar pedido (zerar)</button></div><div class="info" id="p-info">Depois de enviar, toque em “Finalizar pedido” para zerar e começar o próximo. Os modelos continuam salvos.</div>');
+    var f = folha('<h2>Pedido</h2><label>Fornecedor</label><select id="p-for">' + fornOpcoes(I, forn) + '</select>' + escolha + '<pre id="p-txt"></pre><div class="linha"><button class="btn wa" data-act="p-wa">' + ico("chat") + ' WhatsApp</button><button class="btn" data-act="p-copiar">' + ico("copiar") + ' Copiar texto</button></div><div class="linha"><button class="btn" data-act="p-img">' + ico("img") + ' Imagem</button><button class="btn" data-act="p-pdf">' + ico("pdf") + ' PDF</button></div><div class="linha"><button class="btn perigo" data-act="p-final">' + ico("ok") + ' Finalizar pedido (zerar)</button></div><div class="info" id="p-info">Depois de enviar, toque em “Finalizar pedido” para zerar e começar o próximo. Os modelos continuam salvos.</div>');
     function atualizar() {
       var fn = f.querySelector("#p-for").value; S.forn[aba] = fn; salvar();
-      f.querySelector("#p-txt").textContent = textoPedido(secoes, fn, I.loja);
+      var pt = partir(secoes, aba); S.excl[aba] = S.excl[aba] || {};
+      f.querySelector("#p-txt").textContent = pt.inc.length ? textoPedido(pt.inc, fn, I.loja) : "Nenhum item marcado para este pedido.";
+      var nfora = flat.length - pt.inc.reduce(function (a, s) { return a + s.linhas.length; }, 0);
+      f.querySelector("#p-esc-t").textContent = nfora ? "Escolher o que pedir agora · " + nfora + " ficam para depois" : "Escolher o que pedir agora (tudo marcado)";
     }
+    folhaAtualizaPedido = function () { flat.forEach(function (x, n) { var c = f.querySelector('[data-n="' + n + '"]'); if (c) { if (c.checked) delete S.excl[aba][x.k]; else S.excl[aba][x.k] = 1; } }); salvar(); atualizar(); };
     f.querySelector("#p-for").addEventListener("change", atualizar); atualizar();
     var camP = mapaCaminho(), jaT = [];
     secoes.forEach(function (s) { s.linhas.forEach(function (l) { if (aba === "outros") { var n1 = camP["o|" + chave(l.nome)]; if (n1) jaT.push(l.nome + " (" + n1 + ")"); } }); });
@@ -478,7 +505,7 @@
   async function compartilharPedido(formato, dados) {
     var I = indice(), aba = S.aba, fn, sec, loja = I.loja;
     if (dados) { fn = dados.forn; sec = dados.secoes; loja = dados.loja || loja; }
-    else { fn = $("#p-for").value; sec = aba === "outros" ? secoesOutros(I) : secoesGrade(I, aba); }
+    else { fn = $("#p-for").value; sec = partir(secoesAba(I, aba), aba).inc; if (!sec.length) { toast("Marque ao menos um item."); return; } }
     try {
       var cv = desenharPedido(sec, fn, loja), nome = "pedido-" + new Date().toISOString().slice(0, 10);
       if (formato === "pdf") await entregar(await pdfDeCanvas(cv), nome + ".pdf", "Pedido");
@@ -647,15 +674,16 @@
   }
 
   /* ---------------- pedidos anteriores ---------------- */
-  function registrarPedido(aba, forn, secoes, I) {
-    var itens = [];
-    if (aba === "outros") itens = I.faltas.map(function (f) { return Object.assign({}, f.v); });
+  function registrarPedido(aba, forn, secoes, I, fora) {
+    var itens = [], ok = {};
+    secoes.forEach(function (s) { s.linhas.forEach(function (l) { ok[kLinha(s, l)] = 1; }); });
+    if (aba === "outros") I.faltas.forEach(function (f) { if (ok[chaveItemPedido(aba, f.k)]) itens.push(Object.assign({}, f.v)); });
     else {
       var nomes = tiposDe(I, aba).map(function (t) { return t.nome; });
-      Object.keys(S.items).forEach(function (k) { var p = JSON.parse(k); if (p[0] === "qtd" && nomes.indexOf(p[1]) >= 0) itens.push([p[1], p[2], p[3] || "", S.items[k]]); });
+      Object.keys(S.items).forEach(function (k) { var p = JSON.parse(k); if (p[0] === "qtd" && nomes.indexOf(p[1]) >= 0 && ok[chaveItemPedido(aba, k)]) itens.push([p[1], p[2], p[3] || "", S.items[k]]); });
     }
     S.hist = S.hist || [];
-    S.hist.unshift({ id: uid(), em: new Date().toISOString(), aba: aba, forn: forn || "", total: secoes.reduce(function (s, x) { return s + x.total; }, 0), secoes: JSON.parse(JSON.stringify(secoes)), itens: itens, loja: I.loja || "", st: "ag", rec: itens.map(function () { return 0; }) });
+    S.hist.unshift({ id: uid(), em: new Date().toISOString(), aba: aba, forn: forn || "", total: secoes.reduce(function (s, x) { return s + x.total; }, 0), secoes: JSON.parse(JSON.stringify(secoes)), itens: itens, fora: JSON.parse(JSON.stringify(fora || [])), loja: I.loja || "", st: "ag", rec: itens.map(function () { return 0; }) });
     while (S.hist.length > 15) { var z = -1; for (var j = S.hist.length - 1; j >= 0; j--) if (S.hist[j].st !== "ag") { z = j; break; } if (z < 0) break; S.hist.splice(z, 1); }
   }
   function folhaHist() {
@@ -666,7 +694,7 @@
   }
   function folhaHistVer(i) {
     var p = (S.hist || [])[i]; if (!p) return;
-    folha("<h2>" + nomeAba(p.aba) + " · " + dataHora(p.em) + "</h2><pre>" + esc(textoPedido(p.secoes, p.forn, p.loja)) + '</pre><div class="linha"><button class="btn pri" data-act="hist-repetir" data-i="' + i + '">' + ico("hist") + ' Repetir este pedido</button></div>' + (p.st === "ag" ? '<div class="linha"><button class="btn" data-act="rec-abrir" data-i="' + i + '">' + ico("caminhao") + ' Conferir chegada</button></div>' : "") + '<div class="linha"><button class="btn" data-act="hist-img" data-i="' + i + '">' + ico("img") + ' Imagem</button><button class="btn" data-act="hist-pdf" data-i="' + i + '">' + ico("pdf") + ' PDF</button></div><div class="linha"><button class="btn" data-act="hist">‹ Voltar</button></div><div class="info">“Repetir” coloca essas quantidades de volta nas listas, para você conferir e enviar de novo.</div>');
+    folha("<h2>" + nomeAba(p.aba) + " · " + dataHora(p.em) + "</h2><pre>" + esc(textoPedido(p.secoes, p.forn, p.loja)) + '</pre>' + (p.fora && p.fora.length ? '<div class="sec">Não pedi (ficou para depois)</div><pre>' + esc(p.fora.map(function (s) { return s.titulo + "\n" + s.linhas.map(function (l) { return "• " + l.nome + (l.detalhe ? " — " + l.detalhe : "") + " — " + l.qtd + " un"; }).join("\n"); }).join("\n\n")) + "</pre>" : "") + '<div class="linha"><button class="btn pri" data-act="hist-repetir" data-i="' + i + '">' + ico("hist") + ' Repetir este pedido</button></div>' + (p.st === "ag" ? '<div class="linha"><button class="btn" data-act="rec-abrir" data-i="' + i + '">' + ico("caminhao") + ' Conferir chegada</button></div>' : "") + '<div class="linha"><button class="btn" data-act="hist-img" data-i="' + i + '">' + ico("img") + ' Imagem</button><button class="btn" data-act="hist-pdf" data-i="' + i + '">' + ico("pdf") + ' PDF</button></div><div class="linha"><button class="btn" data-act="hist">‹ Voltar</button></div><div class="info">“Repetir” coloca essas quantidades de volta nas listas, para você conferir e enviar de novo.</div>');
   }
   function repetirPedido(i) {
     var p = (S.hist || [])[i]; if (!p) return;
@@ -1192,7 +1220,8 @@
         comDesfazer("Item apagado", function () { setFalta(d.u, { q: 0 }); }); break;
       case "pedido": folhaPedido(); break;
       case "p-wa": {
-        var I = indice(), aba = S.aba, fn = $("#p-for").value, sec = aba === "outros" ? secoesOutros(I) : secoesGrade(I, aba);
+        var I = indice(), aba = S.aba, fn = $("#p-for").value, sec = partir(secoesAba(I, aba), aba).inc;
+        if (!sec.length) { toast("Marque ao menos um item."); break; }
         var forn = I.forns.filter(function (x) { return x.nome === fn; })[0], tel = forn ? telWhats(forn.whatsapp) : "";
         window.open("https://wa.me/" + tel + "?text=" + encodeURIComponent(textoPedido(sec, fn, I.loja)), "_blank");
         break;
@@ -1210,11 +1239,14 @@
       case "p-final":
         if (!el.dataset.conf) { el.dataset.conf = "1"; el.textContent = "Toque de novo para zerar tudo"; break; }
       {
-        var Ip = indice(), abaP = S.aba, secP = abaP === "outros" ? secoesOutros(Ip) : secoesGrade(Ip, abaP), fnP = $("#p-for").value;
-        comDesfazer("Pedido finalizado e guardado", function () {
-          registrarPedido(abaP, fnP, secP, Ip);
-          if (abaP === "outros") { Object.keys(S.items).forEach(function (k) { if (JSON.parse(k)[0] === "falta") definir(k, null); }); mudou(); }
-          else zerarFamilia(abaP);
+        var Ip = indice(), abaP = S.aba, parts = partir(secoesAba(Ip, abaP), abaP), fnP = $("#p-for").value;
+        if (!parts.inc.length) { toast("Marque ao menos um item para pedir."); break; }
+        comDesfazer(parts.fora.length ? "Pedido guardado. O que ficou de fora continua na lista." : "Pedido finalizado e guardado", function () {
+          registrarPedido(abaP, fnP, parts.inc, Ip, parts.fora);
+          var okk = {}; parts.inc.forEach(function (s) { s.linhas.forEach(function (l) { okk[kLinha(s, l)] = 1; }); });
+          Object.keys(S.items).forEach(function (k) { var ck = chaveItemPedido(abaP, k); if (ck && okk[ck]) definir(k, null); });
+          if (S.excl) S.excl[abaP] = {};
+          mudou();
         });
         fechar(); break;
       }
@@ -1273,6 +1305,7 @@
     var el = ev.target; if (!el.dataset || !el.dataset.actIn) return;
     if (el.dataset.actIn === "qtd") setQtd(el.dataset.t, el.dataset.m, el.dataset.c, el.value);
     else if (el.dataset.actIn === "f-qtd") setFalta(el.dataset.u, { q: parseInt(el.value, 10) || 0 });
+    else if (el.dataset.actIn === "p-inc") folhaAtualizaPedido();
     else if (el.dataset.actIn === "rec-q") recAjustar(parseInt(el.dataset.i, 10), parseInt(el.dataset.n, 10), el.value);
     else if (el.dataset.actIn === "voz-q") { var vq = vozItens[parseInt(el.dataset.n, 10)]; if (vq) { vq.q = Math.max(1, Math.min(9999, parseInt(el.value, 10) || 1)); vozDesenhar(); } }
     else if (el.dataset.actIn === "voz-tipo") { var vt = vozItens[parseInt(el.dataset.n, 10)]; if (vt) { vt.tipo = el.value; var Iv = indice(); if (!(Iv.cores[vt.tipo] || []).some(function (c) { return c.nome === vt.cor; })) vt.cor = ""; vozDesenhar(); } }

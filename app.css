@@ -291,3 +291,8 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--marca);outline-o
 .rec-lin .tx small{color:var(--mut)}
 .rec{max-height:46vh;overflow:auto;margin:8px 0}
 .rec-lin .st input{width:56px!important}
+/* v1.5 */
+.chk.esc{display:flex;align-items:flex-start;gap:10px;padding:9px 2px;border-bottom:1px solid var(--linha);margin:0}
+.chk.esc input{width:22px;height:22px;margin-top:2px;flex:none;accent-color:var(--marca2)}
+.chk.esc span{display:flex;flex-direction:column;min-width:0}
+.chk.esc small{color:var(--mut)}
