@@ -5,7 +5,7 @@
   function ico(n, cls) { return '<svg class="i' + (cls ? " " + cls : "") + '" aria-hidden="true"><use href="#i-' + n + '"/></svg>'; }
   function vibra(ms) { try { if (navigator.vibrate) navigator.vibrate(ms || 8); } catch (e) { } }
   var folhaAberta = false, ignoraPop = false;
-  var VERSAO = "1.3";
+  var VERSAO = "1.4";
   var CORES_PADRAO = ["Preta", "Rosa", "Roxa", "Azul", "Vermelha"];
 
   /* ---------------- estado (fica no celular; funciona sem internet) ---------------- */
@@ -14,7 +14,7 @@
     var v = null;
     try { v = JSON.parse(localStorage.getItem("faltas_estado_v1") || "null"); } catch (e) { }
     v = v || {};
-    return { items: v.items || {}, base: v.base || {}, ord: v.ord || {}, ultima: v.ultima || "", aba: v.aba || "capas", tipoSel: v.tipoSel || {}, forn: v.forn || {}, hist: v.hist || [] };
+    return { items: v.items || {}, base: v.base || {}, ord: v.ord || {}, ultima: v.ultima || "", aba: v.aba || "capas", tipoSel: v.tipoSel || {}, forn: v.forn || {}, hist: v.hist || [], procuras: v.procuras || [] };
   }
   function salvar() { try { localStorage.setItem("faltas_estado_v1", JSON.stringify(S)); } catch (e) { } }
   var seqLocal = 0;
@@ -228,6 +228,7 @@
     if (!modelos.length) h += vazio("capas", "Sem modelos neste tipo", "Toque em ＋ Modelo e digite, por exemplo, RM 12. Os modelos ficam salvos; depois é só mudar as quantidades.", '<button class="btn pri" data-act="novo-modelo">＋ Adicionar modelo</button>');
     else if (!lista.length) h += vazio("busca", "Nada encontrado", "Nenhum modelo com “" + esc(filtro) + "”.");
     else h += dica("mais", "Toque em <b>+</b> e <b>−</b> para anotar. <b>Segure o +</b> para subir rápido.");
+    var cam = mapaCaminho();
     lista.forEach(function (m) {
       var total, corpo = "";
       if (t.u) {
@@ -241,7 +242,7 @@
         total = q(I, sel, m, "");
         corpo = '<div class="unico">' + stepper(sel, m, "", total) + "</div>";
       }
-      h += '<div class="card' + (total ? " tem" : "") + '"><div class="mh"><b>' + esc(m) + '</b><span class="tot">' + total + '</span><button class="mm" data-act="mod-menu" data-t="' + esc(sel) + '" data-m="' + esc(m) + '" aria-label="Opções do modelo">⋯</button></div>' + corpo + "</div>";
+      h += '<div class="card' + (total ? " tem" : "") + '"><div class="mh"><b>' + esc(m) + '</b>' + badgeCam(cam["g|" + sel + "|" + m]) + '<span class="tot">' + total + '</span><button class="mm" data-act="mod-menu" data-t="' + esc(sel) + '" data-m="' + esc(m) + '" aria-label="Opções do modelo">⋯</button></div>' + corpo + "</div>";
     });
     h += '<div class="rodape-tipo">' + (t.u ? '<button class="btn" data-act="nova-cor">＋ Cor</button>' : '<button class="btn" data-act="ativar-cores">🎨 Ativar cores neste tipo</button>') + '<button class="btn ghost" data-act="tipo-menu">Opções do tipo</button></div>';
     return h;
@@ -256,11 +257,12 @@
     if (!I.faltas.length) return h + vazio("outros", "Nada faltando por aqui", "Capas e películas ficam nas outras abas. Aqui entram cabos, carregadores, fones e o resto. Toque em ＋ Anotar falta.");
     var grupos = {}, ordem = [];
     I.faltas.forEach(function (f) { var c = f.v.c; if (!grupos[c]) { grupos[c] = []; ordem.push(c); } grupos[c].push(f); });
+    var camO = mapaCaminho();
     ordem.forEach(function (c) {
       h += '<div class="cat">' + esc(c) + "</div>";
       grupos[c].forEach(function (f) {
         var v = f.v, nome = v.i || v.m, sub = [v.i ? v.m : "", v.f ? "→ " + v.f : "", v.o].filter(Boolean).join(" · ");
-        h += '<div class="card"><div class="fl"><div class="tx"><b>' + esc(nome) + "</b>" + (sub ? "<small>" + esc(sub) + "</small>" : "") + '</div><div class="st"><button data-act="f-menos" data-u="' + f.uid + '">−</button><input type="number" inputmode="numeric" min="0" value="' + v.q + '" data-act-in="f-qtd" data-u="' + f.uid + '"><button data-act="f-mais" data-u="' + f.uid + '">+</button></div><button class="x" data-act="f-del" data-u="' + f.uid + '" aria-label="Apagar">✕</button></div></div>';
+        h += '<div class="card"><div class="fl"><div class="tx"><b>' + esc(nome) + "</b>" + (sub ? "<small>" + esc(sub) + "</small>" : "") + badgeCam(camO["o|" + chave(nome)]) + '</div><div class="st"><button data-act="f-menos" data-u="' + f.uid + '">−</button><input type="number" inputmode="numeric" min="0" value="' + v.q + '" data-act-in="f-qtd" data-u="' + f.uid + '"><button data-act="f-mais" data-u="' + f.uid + '">+</button></div><button class="x" data-act="f-del" data-u="' + f.uid + '" aria-label="Apagar">✕</button></div></div>';
       });
     });
     return h;
@@ -311,6 +313,10 @@
       f.querySelector("#p-txt").textContent = textoPedido(secoes, fn, I.loja);
     }
     f.querySelector("#p-for").addEventListener("change", atualizar); atualizar();
+    var camP = mapaCaminho(), jaT = [];
+    secoes.forEach(function (s) { s.linhas.forEach(function (l) { if (aba === "outros") { var n1 = camP["o|" + chave(l.nome)]; if (n1) jaT.push(l.nome + " (" + n1 + ")"); } }); });
+    if (aba !== "outros") tiposDe(I, aba).forEach(function (t) { modelosDe(I, t.nome).forEach(function (m) { var n2 = camP["g|" + t.nome + "|" + m]; if (n2 && (I.qtd[t.nome] && Object.keys(I.qtd[t.nome]).some(function (k) { return k.split("\u0001")[0] === m && I.qtd[t.nome][k] > 0; }))) jaT.push(m + " " + t.nome + " (" + n2 + ")"); }); });
+    if (jaT.length) f.querySelector("#p-info").innerHTML = "<b>Atenção:</b> já tem mercadoria a caminho de " + esc(jaT.slice(0, 6).join(", ")) + (jaT.length > 6 ? "…" : "") + ". Confira antes de pedir de novo.";
   }
   function folhaMenu() {
     var d = Sync.auth.dados() || {}, n = pendentes();
@@ -552,10 +558,10 @@
     toast.h = setTimeout(function () { t.classList.remove("on", "acao"); }, 7000);
   }
   function comDesfazer(msg, fn) {
-    var snap = JSON.stringify({ i: S.items, o: S.ord, h: S.hist });
+    var snap = JSON.stringify({ i: S.items, o: S.ord, h: S.hist, p: S.procuras });
     fn();
     toastAcao(msg, "Desfazer", function () {
-      var s = JSON.parse(snap); S.items = s.i; S.ord = s.o; S.hist = s.h || [];
+      var s = JSON.parse(snap); S.items = s.i; S.ord = s.o; S.hist = s.h || []; S.procuras = s.p || [];
       if (folhaAberta) fechar();
       mudou(); toast("Desfeito ✓");
     });
@@ -649,18 +655,18 @@
       Object.keys(S.items).forEach(function (k) { var p = JSON.parse(k); if (p[0] === "qtd" && nomes.indexOf(p[1]) >= 0) itens.push([p[1], p[2], p[3] || "", S.items[k]]); });
     }
     S.hist = S.hist || [];
-    S.hist.unshift({ id: uid(), em: new Date().toISOString(), aba: aba, forn: forn || "", total: secoes.reduce(function (s, x) { return s + x.total; }, 0), secoes: JSON.parse(JSON.stringify(secoes)), itens: itens, loja: I.loja || "" });
-    S.hist = S.hist.slice(0, 15);
+    S.hist.unshift({ id: uid(), em: new Date().toISOString(), aba: aba, forn: forn || "", total: secoes.reduce(function (s, x) { return s + x.total; }, 0), secoes: JSON.parse(JSON.stringify(secoes)), itens: itens, loja: I.loja || "", st: "ag", rec: itens.map(function () { return 0; }) });
+    while (S.hist.length > 15) { var z = -1; for (var j = S.hist.length - 1; j >= 0; j--) if (S.hist[j].st !== "ag") { z = j; break; } if (z < 0) break; S.hist.splice(z, 1); }
   }
   function folhaHist() {
     var h = S.hist || [];
     folha("<h2>Pedidos anteriores</h2>" + (h.length ? '<div class="lista-acoes">' + h.map(function (p, i) {
-      return '<button data-act="hist-ver" data-i="' + i + '">' + ico(p.aba === "capas" ? "capas" : p.aba === "peliculas" ? "pel" : "outros") + '<span class="tx"><b>' + nomeAba(p.aba) + " · " + pecas(p.total) + "</b><small>" + dataHora(p.em) + (p.forn ? " · " + esc(p.forn) : "") + "</small></span>" + ico("seta-d", "seta") + "</button>";
+      return '<button data-act="hist-ver" data-i="' + i + '">' + ico(p.aba === "capas" ? "capas" : p.aba === "peliculas" ? "pel" : "outros") + '<span class="tx"><b>' + nomeAba(p.aba) + " · " + pecas(p.total) + "</b><small>" + dataHora(p.em) + (p.forn ? " · " + esc(p.forn) : "") + (p.st === "ag" ? " · <b class=\"tag-ag\">A caminho</b>" : "") + "</small></span>" + ico("seta-d", "seta") + "</button>";
     }).join("") + "</div>" : vazio("hist", "Nenhum pedido guardado ainda", "Quando você tocar em “Finalizar pedido”, ele fica guardado aqui para repetir quando quiser.")) + '<div class="info">Os pedidos anteriores ficam guardados só neste celular.</div>');
   }
   function folhaHistVer(i) {
     var p = (S.hist || [])[i]; if (!p) return;
-    folha("<h2>" + nomeAba(p.aba) + " · " + dataHora(p.em) + "</h2><pre>" + esc(textoPedido(p.secoes, p.forn, p.loja)) + '</pre><div class="linha"><button class="btn pri" data-act="hist-repetir" data-i="' + i + '">' + ico("hist") + ' Repetir este pedido</button></div><div class="linha"><button class="btn" data-act="hist-img" data-i="' + i + '">' + ico("img") + ' Imagem</button><button class="btn" data-act="hist-pdf" data-i="' + i + '">' + ico("pdf") + ' PDF</button></div><div class="linha"><button class="btn" data-act="hist">‹ Voltar</button></div><div class="info">“Repetir” coloca essas quantidades de volta nas listas, para você conferir e enviar de novo.</div>');
+    folha("<h2>" + nomeAba(p.aba) + " · " + dataHora(p.em) + "</h2><pre>" + esc(textoPedido(p.secoes, p.forn, p.loja)) + '</pre><div class="linha"><button class="btn pri" data-act="hist-repetir" data-i="' + i + '">' + ico("hist") + ' Repetir este pedido</button></div>' + (p.st === "ag" ? '<div class="linha"><button class="btn" data-act="rec-abrir" data-i="' + i + '">' + ico("caminhao") + ' Conferir chegada</button></div>' : "") + '<div class="linha"><button class="btn" data-act="hist-img" data-i="' + i + '">' + ico("img") + ' Imagem</button><button class="btn" data-act="hist-pdf" data-i="' + i + '">' + ico("pdf") + ' PDF</button></div><div class="linha"><button class="btn" data-act="hist">‹ Voltar</button></div><div class="info">“Repetir” coloca essas quantidades de volta nas listas, para você conferir e enviar de novo.</div>');
   }
   function repetirPedido(i) {
     var p = (S.hist || [])[i]; if (!p) return;
@@ -807,9 +813,10 @@
       var gaps = []; for (var i = 1; i < d.ts.length; i++) gaps.push((d.ts[i] - d.ts[i - 1]) / 86400000);
       var media = mediaDe(gaps), desde = (Date.now() - d.ts[d.ts.length - 1]) / 86400000, qMed = Math.max(1, Math.round(mediaDe(d.qs)));
       if (media < 0.5 || desde < Math.max(2, media * 0.75)) return;
-      var r = d.ref, ja;
+      var r = d.ref, ja, cam = mapaCaminho();
       if (r.aba === "outros") ja = I.faltas.some(function (f) { return chave(f.v.i || f.v.m) === chave(r.i || r.m); });
       else ja = !I.tipos[r.tipo] || q(I, r.tipo, r.modelo, r.cor || "") > 0;
+      if (!ja) ja = !!cam[r.aba === "outros" ? "o|" + chave(r.i || r.m) : "g|" + r.tipo + "|" + r.modelo];
       if (ja) return;
       sug.push({ nome: d.nome, ref: r, qMed: qMed, media: Math.round(media), desde: Math.round(desde), razao: desde / media });
     });
@@ -826,11 +833,12 @@
       '<button class="mini-card' + (nC ? " tem" : "") + '" data-act="aba" data-aba="capas">' + ico("capas") + "<b>" + nC + "</b><small>Capas</small></button>" +
       '<button class="mini-card' + (nP ? " tem" : "") + '" data-act="aba" data-aba="peliculas">' + ico("pel") + "<b>" + nP + "</b><small>Películas</small></button>" +
       '<button class="mini-card' + (nO ? " tem" : "") + '" data-act="aba" data-aba="outros">' + ico("outros") + "<b>" + nO + "</b><small>Outros</small></button></div>";
-    h += '<button class="btn pri full grande" data-act="voz">' + ico("mic") + " Falar pedido</button>";
+    h += '<div class="dois"><button class="btn pri grande" data-act="voz">' + ico("mic") + ' Falar pedido</button><button class="btn grande" data-act="procura">' + ico("busca") + " Cliente procurou</button></div>";
     h += '<div class="sec">Pedidos prontos</div>';
     var prontos = [["capas", nC], ["peliculas", nP], ["outros", nO]].filter(function (x) { return x[1] > 0; });
     if (!prontos.length) h += '<div class="info">Quando você anotar quantidades, o pedido de cada lista aparece aqui.</div>';
     prontos.forEach(function (x) { h += '<div class="lin"><span class="tx"><b>' + nomeAba(x[0]) + "</b><small>" + pecas(x[1]) + '</small></span><button class="btn" data-act="resumo-pedido" data-aba="' + x[0] + '">' + ico("pedido") + " Ver pedido</button></div>"; });
+    h += blocoResumoV14(I);
     h += '<div class="sec">Sugestões para você</div>';
     if (!E.sug.length) h += vazio("raio", "Ainda aprendendo", "Conforme você finaliza pedidos, o app descobre o que você costuma repor e avisa quando estiver na hora.");
     E.sug.forEach(function (s, i) { h += '<div class="lin"><span class="tx"><b>' + esc(s.nome) + "</b><small>Você costuma pedir a cada ~" + s.media + " dias · último há " + s.desde + ' dias</small></span><button class="btn pri" data-act="sug-add" data-i="' + i + '">+ ' + s.qMed + "</button></div>"; });
@@ -1013,6 +1021,141 @@
     }
   }
 
+  /* ================= v1.4: "Cliente procurou" e "Receber mercadoria" (dados só neste celular) ================= */
+  function local() { salvar(); render(); }
+  function pedAg() { return (S.hist || []).filter(function (p) { return p.st === "ag"; }); }
+  function itemInfo(p, it) {
+    if (p.aba === "outros") { var base = it.i || it.m; return { nome: base + (it.i && it.m ? " · " + it.m : ""), q: it.q, key: "o|" + chave(base) }; }
+    return { nome: it[1] + (it[2] ? " " + String(it[2]).toLowerCase() : "") + " · " + it[0], q: it[3], key: "g|" + it[0] + "|" + it[1] };
+  }
+  function mapaCaminho() {
+    var m = {};
+    pedAg().forEach(function (p) {
+      (p.itens || []).forEach(function (it, n) {
+        var inf = itemInfo(p, it), falta = inf.q - ((p.rec || [])[n] || 0);
+        if (falta > 0) m[inf.key] = (m[inf.key] || 0) + falta;
+      });
+    });
+    return m;
+  }
+  function badgeCam(n) { return n ? '<span class="cam" title="Já pedido, a caminho">' + ico("caminhao") + n + " a caminho</span>" : ""; }
+  function totalFaltaChegar(p) { return (p.itens || []).reduce(function (s, it, n) { var inf = itemInfo(p, it); return s + Math.max(0, inf.q - ((p.rec || [])[n] || 0)); }, 0); }
+
+  /* ---- Cliente procurou e não tinha ---- */
+  function procurasRank(dias) {
+    var corte = Date.now() - dias * 86400000, g = {};
+    (S.procuras || []).forEach(function (p) {
+      if (new Date(p.em).getTime() < corte) return;
+      var k = chave(p.nome) + "|" + chave(p.tipo || "") + "|" + chave(p.cor || "");
+      var x = g[k] || (g[k] = { nome: p.nome, tipo: p.tipo || "", cor: p.cor || "", n: 0, ult: p.em });
+      x.n++; if (p.em > x.ult) x.ult = p.em;
+    });
+    return Object.keys(g).map(function (k) { return g[k]; }).sort(function (a, b) { return b.n - a.n || (a.ult < b.ult ? 1 : -1); });
+  }
+  function rotuloProcura(x) { return x.nome + (x.tipo ? " · " + x.tipo : "") + (x.cor ? " " + String(x.cor).toLowerCase() : ""); }
+  var procuraRank = [];
+  function folhaProcura() {
+    var I = indice(), todos = {}, tipos = [];
+    ["capas", "peliculas"].forEach(function (fam) { tiposDe(I, fam).forEach(function (t) { tipos.push(t); (I.mods[t.nome] || []).forEach(function (m) { todos[m.nome] = 1; }); }); });
+    var f = folha('<h2>Cliente procurou</h2><div class="info">Anote o que o cliente pediu e você não tinha. O app mostra o que mais faz falta.</div><label>O que ele procurou?</label><input id="pr-nome" type="text" list="dl-pr" placeholder="Ex.: A15, iPhone 13…" autocomplete="off" autofocus><datalist id="dl-pr">' + Object.keys(todos).map(function (m) { return '<option value="' + esc(m) + '">'; }).join("") + '</datalist><label>Tipo (opcional)</label><select id="pr-tipo"><option value="">Qualquer / não sei</option>' + tipos.map(function (t) { return "<option>" + esc(t.nome) + "</option>"; }).join("") + '</select><div id="pr-corbox"></div><label class="chk"><input id="pr-falta" type="checkbox"> Também anotar 1 na lista de faltas</label><div class="linha"><button class="btn" data-act="fecha">Cancelar</button><button class="btn pri" data-act="pr-ok">Registrar</button></div>');
+    var st = f.querySelector("#pr-tipo");
+    st.addEventListener("change", function () {
+      var cs = (indice().cores[st.value] || []).map(function (c) { return c.nome; });
+      f.querySelector("#pr-corbox").innerHTML = cs.length ? '<label>Cor (opcional)</label><select id="pr-cor"><option value="">Qualquer cor</option>' + cs.map(function (c) { return "<option>" + esc(c) + "</option>"; }).join("") + "</select>" : "";
+    });
+    f.querySelector("#pr-nome").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); f.querySelector('[data-act="pr-ok"]').click(); } });
+  }
+  function anotarFaltaDe(nome, tipo, cor) {
+    var I = indice();
+    if (tipo && I.tipos[tipo]) {
+      var mod = (I.mods[tipo] || []).map(function (m) { return m.nome; }).concat(Object.keys(I.qtd[tipo] || {}).map(function (k) { return k.split("\u0001")[0]; })).filter(function (m) { return chave(m) === chave(nome); })[0] || limpa(nome);
+      if (!(I.mods[tipo] || []).some(function (m) { return m.nome === mod; })) definir(SK("mod", tipo, mod), 1);
+      var c = I.tipos[tipo].u ? (cor || "") : "";
+      definir(SK("qtd", tipo, mod, c), Math.min(9999, q(I, tipo, mod, c) + 1));
+    } else addFalta("Outros", nome, "", 1, "");
+    mudou();
+  }
+  function registrarProcura() {
+    var nome = limpa($("#pr-nome").value); if (!nome) { toast("Digite o que o cliente procurou."); return; }
+    var tipo = $("#pr-tipo").value, ce = $("#pr-cor"), cor = ce ? ce.value : "", anota = $("#pr-falta").checked;
+    comDesfazer("Anotado: cliente procurou", function () {
+      S.procuras = S.procuras || [];
+      S.procuras.unshift({ id: uid(), em: new Date().toISOString(), nome: nome, tipo: tipo, cor: cor });
+      S.procuras = S.procuras.slice(0, 500);
+      if (anota) anotarFaltaDe(nome, tipo, cor); else local();
+    });
+    fechar();
+  }
+  function folhaProcuras() {
+    var p = S.procuras || [];
+    folha("<h2>Procuras anotadas</h2>" + (p.length ? '<div class="lista-acoes">' + p.slice(0, 60).map(function (x) {
+      return '<div class="row-cor"><span class="tx"><b>' + esc(rotuloProcura(x)) + "</b><small>" + dataHora(x.em) + '</small></span><button class="mini perigo" data-act="pr-del" data-id="' + x.id + '" aria-label="Apagar">' + ico("lixo") + "</button></div>";
+    }).join("") + "</div>" : vazio("busca", "Nada anotado", "Quando um cliente pedir algo que você não tem, toque em “Cliente procurou” na tela Resumo.")) + '<div class="linha"><button class="btn pri" data-act="fecha">Pronto</button></div><div class="info">Fica guardado só neste celular.</div>');
+  }
+
+  /* ---- Receber mercadoria ---- */
+  function folhaReceber(i) {
+    var p = (S.hist || [])[i]; if (!p) return;
+    if (!p.rec || p.rec.length !== (p.itens || []).length) p.rec = (p.itens || []).map(function () { return 0; });
+    var h = "<h2>Receber pedido</h2><div class=\"info\">" + nomeAba(p.aba) + " · " + dataHora(p.em) + (p.forn ? " · " + esc(p.forn) : "") + "<br>Marque quanto chegou de cada item.</div><div class=\"rec\">";
+    p.itens.forEach(function (it, n) {
+      var inf = itemInfo(p, it);
+      h += '<div class="rec-lin" data-n="' + n + '"><span class="tx"><b>' + esc(inf.nome) + '</b><small>pedido: ' + inf.q + '</small></span><div class="st"><button data-act="rec-menos" data-i="' + i + '" data-n="' + n + '" aria-label="Menos">−</button><input type="number" inputmode="numeric" min="0" max="' + inf.q + '" value="' + (p.rec[n] || 0) + '" data-act-in="rec-q" data-i="' + i + '" data-n="' + n + '" aria-label="Chegou"><button data-act="rec-mais" data-i="' + i + '" data-n="' + n + '" aria-label="Mais">+</button></div></div>';
+    });
+    h += '</div><div class="linha"><button class="btn" data-act="rec-tudo" data-i="' + i + '">Chegou tudo</button><button class="btn pri" data-act="rec-salvar" data-i="' + i + '">Salvar conferência</button></div><div id="rec-fim"></div><div class="linha"><button class="btn" data-act="rec-encerrar" data-i="' + i + '">Encerrar pedido</button></div><div class="info">Salvar mantém o pedido “a caminho” se ainda faltar algo. Encerrar dá o pedido como recebido.</div>';
+    folha(h);
+  }
+  function recAjustar(i, n, v) {
+    var p = (S.hist || [])[i]; if (!p) return;
+    var inf = itemInfo(p, p.itens[n]); v = Math.max(0, Math.min(inf.q, parseInt(v, 10) || 0));
+    p.rec[n] = v; salvar();
+    var inp = document.querySelector('.rec-lin[data-n="' + n + '"] input'); if (inp) inp.value = v;
+  }
+  function recSalvar(i) {
+    var p = (S.hist || [])[i]; if (!p) return;
+    if (totalFaltaChegar(p) === 0) { p.st = "ok"; p.recEm = new Date().toISOString(); fechar(); local(); toast("Pedido recebido por completo ✓"); }
+    else { fechar(); local(); toast("Conferência salva. Ainda faltam " + totalFaltaChegar(p) + "."); }
+  }
+  function recEncerrar(i) {
+    var p = (S.hist || [])[i]; if (!p) return;
+    var falta = totalFaltaChegar(p);
+    if (falta > 0 && !document.getElementById("rec-dev")) {
+      $("#rec-fim").innerHTML = '<div class="info">Ainda faltam <b>' + falta + "</b> peças.</div><label class=\"chk\"><input id=\"rec-dev\" type=\"checkbox\" checked> Devolver o que faltou para a lista de faltas</label><div class=\"linha\"><button class=\"btn perigo\" data-act=\"rec-encerrar\" data-i=\"" + i + "\">Confirmar e encerrar</button></div>";
+      return;
+    }
+    var dev = !!(document.getElementById("rec-dev") && document.getElementById("rec-dev").checked);
+    comDesfazer("Pedido encerrado", function () {
+      if (dev) {
+        var I = indice();
+        p.itens.forEach(function (it, n) {
+          var f = itemInfo(p, it).q - (p.rec[n] || 0); if (f <= 0) return;
+          if (p.aba === "outros") addFalta(it.c || "Outros", it.i, it.m, f, it.f || "");
+          else { if (!I.tipos[it[0]]) return; if (!(I.mods[it[0]] || []).some(function (m) { return m.nome === it[1]; })) definir(SK("mod", it[0], it[1]), 1); definir(SK("qtd", it[0], it[1], it[2]), Math.min(9999, q(indice(), it[0], it[1], it[2]) + f)); }
+        });
+      }
+      p.st = "ok"; p.recEm = new Date().toISOString(); mudou();
+    });
+    fechar();
+  }
+  function blocoResumoV14(I) {
+    var h = "", ag = pedAg();
+    h += '<div class="sec">A caminho</div>';
+    if (!ag.length) h += '<div class="info">Quando você finaliza um pedido, ele fica aqui até a mercadoria chegar.</div>';
+    ag.forEach(function (p) {
+      var i = S.hist.indexOf(p);
+      h += '<div class="lin"><span class="tx"><b>' + ico("caminhao") + " " + nomeAba(p.aba) + " · " + pecas(totalFaltaChegar(p)) + "</b><small>" + dataHora(p.em) + (p.forn ? " · " + esc(p.forn) : "") + '</small></span><button class="btn pri" data-act="rec-abrir" data-i="' + i + '">Conferir</button></div>';
+    });
+    h += '<div class="sec">Clientes procuraram</div>';
+    procuraRank = procurasRank(30);
+    if (!procuraRank.length) h += '<div class="info">Anote o que o cliente procurou e você não tinha. Aqui aparece o que mais faz você perder venda.</div>';
+    else {
+      var max = procuraRank[0].n;
+      procuraRank.slice(0, 5).forEach(function (x, n) { h += '<div class="rank"><div class="rl"><b>' + esc(rotuloProcura(x)) + "</b><small>" + x.n + (x.n === 1 ? " vez" : " vezes") + '</small><button class="mini" data-act="pr-add" data-i="' + n + '" aria-label="Anotar na lista de faltas">+</button></div><div class="barra-h"><i style="width:' + Math.max(6, Math.round(100 * x.n / max)) + '%"></i></div></div>'; });
+      h += '<div class="linha"><button class="btn" data-act="pr-todas">Ver todas</button></div>';
+    }
+    return h;
+  }
+
   /* ---------------- eventos ---------------- */
   document.addEventListener("click", function (ev) {
     var el = ev.target.closest("[data-act]"); if (!el) return;
@@ -1083,6 +1226,16 @@
       case "voz-del": vozItens.splice(parseInt(d.n, 10), 1); vozDesenhar(); break;
       case "voz-aplicar": vozAplicar(); break;
       case "resumo-pedido": S.aba = d.aba; render(); folhaPedido(); break;
+      case "procura": folhaProcura(); break;
+      case "pr-ok": registrarProcura(); break;
+      case "pr-todas": folhaProcuras(); break;
+      case "pr-del": comDesfazer("Procura apagada", function () { S.procuras = (S.procuras || []).filter(function (x) { return x.id !== d.id; }); local(); }); folhaProcuras(); break;
+      case "pr-add": { var px = procuraRank[parseInt(d.i, 10)]; if (px) comDesfazer("Anotado na lista de faltas", function () { anotarFaltaDe(px.nome, px.tipo, px.cor); }); break; }
+      case "rec-abrir": folhaReceber(parseInt(d.i, 10)); break;
+      case "rec-mais": case "rec-menos": { var pr = S.hist[parseInt(d.i, 10)]; if (pr) recAjustar(parseInt(d.i, 10), parseInt(d.n, 10), (pr.rec[parseInt(d.n, 10)] || 0) + (a === "rec-mais" ? 1 : -1)); break; }
+      case "rec-tudo": { var pt = S.hist[parseInt(d.i, 10)]; if (pt) { pt.itens.forEach(function (it, n) { recAjustar(parseInt(d.i, 10), n, itemInfo(pt, it).q); }); } break; }
+      case "rec-salvar": recSalvar(parseInt(d.i, 10)); break;
+      case "rec-encerrar": recEncerrar(parseInt(d.i, 10)); break;
       case "sug-add": sugAdicionar(parseInt(d.i, 10)); break;
       case "hist": folhaHist(); break;
       case "hist-ver": folhaHistVer(parseInt(d.i, 10)); break;
@@ -1120,6 +1273,7 @@
     var el = ev.target; if (!el.dataset || !el.dataset.actIn) return;
     if (el.dataset.actIn === "qtd") setQtd(el.dataset.t, el.dataset.m, el.dataset.c, el.value);
     else if (el.dataset.actIn === "f-qtd") setFalta(el.dataset.u, { q: parseInt(el.value, 10) || 0 });
+    else if (el.dataset.actIn === "rec-q") recAjustar(parseInt(el.dataset.i, 10), parseInt(el.dataset.n, 10), el.value);
     else if (el.dataset.actIn === "voz-q") { var vq = vozItens[parseInt(el.dataset.n, 10)]; if (vq) { vq.q = Math.max(1, Math.min(9999, parseInt(el.value, 10) || 1)); vozDesenhar(); } }
     else if (el.dataset.actIn === "voz-tipo") { var vt = vozItens[parseInt(el.dataset.n, 10)]; if (vt) { vt.tipo = el.value; var Iv = indice(); if (!(Iv.cores[vt.tipo] || []).some(function (c) { return c.nome === vt.cor; })) vt.cor = ""; vozDesenhar(); } }
     else if (el.dataset.actIn === "voz-cor") { var vc = vozItens[parseInt(el.dataset.n, 10)]; if (vc) { vc.cor = el.value; } }
@@ -1154,5 +1308,5 @@
     executarAtalho(ATALHO);
   }
   iniciar();
-  window.__faltas = { vozAnalisar: vozAnalisar, estatHist: estatHist, pendentes: pendentes, S: function () { return S; }, indice: indice, sincronizar: sincronizar, textoPedido: textoPedido, secoesGrade: secoesGrade, secoesOutros: secoesOutros };
+  window.__faltas = { vozAnalisar: vozAnalisar, estatHist: estatHist, pendentes: pendentes, S: function () { return S; }, indice: indice, sincronizar: sincronizar, textoPedido: textoPedido, mapaCaminho: mapaCaminho, procurasRank: procurasRank, secoesGrade: secoesGrade, secoesOutros: secoesOutros };
 })();
